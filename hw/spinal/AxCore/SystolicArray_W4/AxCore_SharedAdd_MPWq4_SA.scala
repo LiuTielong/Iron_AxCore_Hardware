@@ -19,7 +19,15 @@ case class AxCore_SharedAdd_MPWq4_SA(
                                      Integer      : Int,
                                      Fraction     : Int,
                                     ) extends Component {
-
+  // 1. Parameters and IO.
+  // How many tiles: TileRow * TileCol. (eg. 16*16)
+  // How many PEs in a tile: PERow * PECol. (eg. 4*4)
+  // DinTop_Wq_FP: Wq input from top, 16*4 numbers.
+  // DinLft_A_FP: A input from left, 16*4 numbers.
+  // S_FP: scaling factor for dequantization.
+  // Wq_FmltSel: Wq format selection (E3Mo, E2M1, E1M2).
+  // WqLock: the shared weight lock signal between all the PEs.
+  // Result: the Final output of the architecture.
   val TotalWidth = 1 + ExpoWidth + MantWidth
   val PWidth     = Integer + Fraction
   val PSumWidth  = ExpoWidth + PWidth + 1
@@ -36,12 +44,13 @@ case class AxCore_SharedAdd_MPWq4_SA(
   noIoPrefix()
 
 
-  // * Params Generation
+  // 2. Params Generation & PreAdd
+  // Generate Params for dequantization.
   val ParamsGenerate = new ParamsGen(ExpoWidth=ExpoWidth, MantWidth=MantWidth)
   ParamsGenerate.io.S_FP := io.S_FP
 
 
-  // * PreAdd for A -> T
+  // * PreAdd for A -> T for each row of PEs
   val PreAddGroup = (0 until TileRow).map{ tr =>
     (0 until PERow).map{ pr =>
       new PreAdd(QtTotalWidth=QtTotalWidth, ExpoWidth=ExpoWidth, MantWidth=MantWidth).setName(s"PreAdd_tr${tr}_pr${pr}")
@@ -55,12 +64,16 @@ case class AxCore_SharedAdd_MPWq4_SA(
     }
   }
 
-
+  // 3. Horizontal pipeline.
+  // There's a cycle latency between each column of tiles.
   // * Generate tables of size TileRow*TileCol for DinLft Regs each is Vec(Regs, PERow)
   val DinLftRegTable_T = List.tabulate(TileRow,TileCol)((tr, tc) => {
     Vec((0 until PERow).map{ pr => Reg(Bits(TotalWidth bits)).init(B(0)).setName(s"DinLftRegTable_T_tr${tr}_tc${tc}_pr${pr}") })
   })    // for pipelining
 
+  // 4. Vertical pipeline.
+  // There's a cycle latency between each row of tiles.
+  // One group of PSum regs for each row of tiles.
   val DinLftRegTable_A_Vld = List.tabulate(TileRow,TileCol)((tr, tc) => {
     Vec((0 until PERow).map{ pr => Reg(Bool()).init(False).setName(s"DinLftRegTable_A_Vld_tr${tr}_tc${tc}_pr${pr}") })
   })    // for pipelining
@@ -72,7 +85,7 @@ case class AxCore_SharedAdd_MPWq4_SA(
   })    // for pipelining
 
 
-  // * Generate Tiles
+  // 5. Generate Tiles
   val Tiles = List.tabulate(TileRow,TileCol)((tr, tc) => { AxCore_SharedAdd_MPWq4_Tile(    // MARK: SharedAdd
     PERow=PERow, PECol=PECol, QtTotalWidth=QtTotalWidth,
     ExpoWidth=ExpoWidth, MantWidth=MantWidth, Integer=Integer, Fraction=Fraction
@@ -115,7 +128,7 @@ case class AxCore_SharedAdd_MPWq4_SA(
   }}
 
 
-  // * Normalizes
+  // 6. Normalize+AxDequant --> Result
   val NormGroup = (0 until TileCol).map{ tc =>
     (0 until PECol).map{ pc =>
       new normalize(ExpoWidth=ExpoWidth, MantWidth=MantWidth, Integer=Integer, Fraction=Fraction).setName(s"Norm_tc${tc}_pc${pc}")

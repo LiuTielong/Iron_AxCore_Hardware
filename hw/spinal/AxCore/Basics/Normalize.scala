@@ -5,14 +5,15 @@ import spinal.core.sim._
 import AxCore.Config
 import scala.language.postfixOps
 
-
+// There's a verilog module named "normalize", this spinal BlockBox will call it.
+// This class is like an IP.
 case class normalize(ExpoWidth: Int, MantWidth: Int, Integer: Int, Fraction: Int) extends BlackBox {
 
   val TotalWidth = 1 + ExpoWidth + MantWidth
-  val PWidth = Integer + Fraction
+  val PWidth = Integer + Fraction                // the bit width of integer part or fraction part of the psum.
 
   // Generics
-  addGeneric("E", ExpoWidth)
+  addGeneric("E", ExpoWidth)                      // transfer parameters of scala to verilog
   addGeneric("M", MantWidth)
   addGeneric("INTEGER", Integer)
   addGeneric("FRACTION", Fraction)
@@ -32,7 +33,8 @@ case class normalize(ExpoWidth: Int, MantWidth: Int, Integer: Int, Fraction: Int
 }
 
 
-
+// BlackBox class is not suitable to be a top level module, so we design a top level module to wrap it.
+// We can use it to generate a top RTL file.
 case class NormalizeTop(ExpoWidth: Int, MantWidth: Int, Integer: Int, Fraction: Int) extends Component {
 
   val TotalWidth = 1 + ExpoWidth + MantWidth
@@ -47,12 +49,12 @@ case class NormalizeTop(ExpoWidth: Int, MantWidth: Int, Integer: Int, Fraction: 
   val Norm = new normalize(ExpoWidth=ExpoWidth, MantWidth=MantWidth, Integer=Integer, Fraction=Fraction)
   Norm.io.src := io.Src
   io.Result := Norm.io.result
-
+  // implict clk
 }
 
 
 
 object NormalizeTopRTL extends App {
   Config.setGenSubDir("/NormalizeTop")
-  Config.spinal.generateVerilog(NormalizeTop(ExpoWidth=8, MantWidth=7, Integer=4, Fraction=15)).printRtl().mergeRTLSource()
+  Config.spinal.generateVerilog(NormalizeTop(ExpoWidth=5, MantWidth=10, Integer=4, Fraction=15)).printRtl().mergeRTLSource()
 }

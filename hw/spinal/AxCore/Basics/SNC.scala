@@ -24,6 +24,7 @@ class SNC_Base(QtTotalWidth: Int, OutputWidth: Int) extends Component {
 
 
 // MARK: Adaptive-format in W4: for E3M0, E2M1, E1M2
+// All FP4 formats align to S1E3M2
 case class SNC_W4(QtTotalWidth: Int=4, OutputWidth: Int=6) extends SNC_Base(QtTotalWidth, OutputWidth) {
 
   val Sign    = io.Wq_FP_In(3)

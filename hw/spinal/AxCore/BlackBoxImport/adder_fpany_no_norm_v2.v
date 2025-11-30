@@ -14,6 +14,9 @@ module adder_fpany_no_norm_v2
     output  [E + PWIDTH     :0] result      //output at d1
 );
 ////////////////////////////////////////////////
+// 1. unpack the inputs: 
+// src -> src_sign, src_exp, src_man.
+// psum -> psum_sign, psum_exp, psum_man.
 wire                    src_sign[NUM - 1:0];
 wire [E - 1         :0] src_exp [NUM - 1:0];
 wire [M - 1         :0] src_man [NUM - 1:0];
@@ -32,7 +35,9 @@ endgenerate
 assign psum_sign = psum[E + PWIDTH];
 assign psum_exp  = psum[E + PWIDTH - 1:PWIDTH];
 assign psum_man  = psum[PWIDTH - 1:0];
+
 // ////////////////////////////////////////////////
+// 2. find the max exp of psum and src.
 // init data_exp
 wire [E*(NUM + 1) - 1 :0] data_exp;
 
@@ -56,8 +61,10 @@ u_comp_tree(
     .comp_data(data_exp),
     .max_data(exp_temp)
 );
+
 ////////////////////////////////////////////////
-// get diff number
+// 3. get diff number
+// to calculate how many bits should each number be shifted.
 wire [E - 1:0] exp_diff[NUM:0];    // Should be [NUM:0]
 
 generate 

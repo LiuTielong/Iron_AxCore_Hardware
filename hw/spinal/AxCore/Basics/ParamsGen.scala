@@ -1,4 +1,4 @@
-﻿/*
+/*
 ParamsGen implements a simple compensation: S - B2 + C2
 Inputs:  S (scale factor in floating-point, assumed non-negative)
 Outputs: S - B + C2 (B: bias of the FP format; C2: compensation constant)

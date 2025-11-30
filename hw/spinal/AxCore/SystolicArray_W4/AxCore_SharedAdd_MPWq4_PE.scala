@@ -9,6 +9,7 @@ import AxCore.Operators.AdderInt
 
 
 // MARK: AxCore's Weight Stationary Two-Level Spatial Array, with Shared Partial Sum Adder -- PE
+// Weight Stationary + SNC_W4 + FPMA + GuardAW
 case class AxCore_SharedAdd_MPWq4_PE(
                                      QtTotalWidth : Int,
                                      ExpoWidth    : Int,
@@ -17,6 +18,7 @@ case class AxCore_SharedAdd_MPWq4_PE(
 
   val TotalWidth = 1 + ExpoWidth + MantWidth
 
+  // 1. Interface and bit width.
   val io = new Bundle {
     val Wq_CIN_FP  = in  Bits(QtTotalWidth bits)               // Wq Cascade In
     val Wq_COUT_FP = out Bits(QtTotalWidth bits)               // Wq Cascade Out
@@ -27,14 +29,16 @@ case class AxCore_SharedAdd_MPWq4_PE(
     val A_Vld_CIN  = in  Bool()                                // Validness of A_FP Cascade In
     val A_Vld_COUT = out Bool()                                // Validness of A_FP Cascade Out
 
-    val R_FP       = out Bits(TotalWidth bits)  simPublic()    // R = Wq * A
+    val R_FP       = out Bits(TotalWidth bits)  simPublic()    // R = Wq * A (R=T+Align(Wq))
 
-    val WqLock     = in  Bool()                                // Locking the preloaded Wq
+    val WqLock     = in  Bool()                                // Locking the preloaded Wq, implement "weight stationary"
   }
   noIoPrefix()
 
 
-  // * Weight Stationary
+  // 2. Weight Stationary
+  // if WqLock is True, Wq is locked.
+  // if Wq is false, accept a new Wq from previous PE.
   val WqLockReg = Reg(Bits(QtTotalWidth bits)).init(B(0))
 
   when(io.WqLock) {
@@ -44,41 +48,41 @@ case class AxCore_SharedAdd_MPWq4_PE(
   }
 
 
-  // * Subnormal Conversion
+  // 3. Subnormal Conversion
   val SNC_MPWq4 = new SNC_W4()
   SNC_MPWq4.io.Wq_FP_In := WqLockReg
-  SNC_MPWq4.io.Wq_FmtSel := io.Wq_FmtSel
-  SNC_MPWq4.io.StochasticBit := io.T_CIN_TC(MantWidth-1)
-  val WqGuarded = SNC_MPWq4.io.Wq_FP_Out    // {S1, E3, M2}
+  SNC_MPWq4.io.Wq_FmtSel := io.Wq_FmtSel  
+  SNC_MPWq4.io.StochasticBit := io.T_CIN_TC(MantWidth-1)  // use 1 bit of TC as StochasticBit to launch "NeedRandomize" of SNC
+  val WqGuarded = SNC_MPWq4.io.Wq_FP_Out                  // {S1, E3, M2}, totally 6 bits
 
 
-  // * Extend the guarded Wq to bigger FP (E3M2 to FP16)
-  val Wq_Extend_FP = WqGuarded(5) ## B(0, ExpoWidth-3 bits) ## WqGuarded(4 downto 0) ## B(0, MantWidth-2 bits)
+  // 4. Extend the guarded Wq to bigger FP (E3M2 to FP16)
+  val Wq_Extend_FP = WqGuarded(5) ## B(0, ExpoWidth-3 bits) ## WqGuarded(4 downto 0) ## B(0, MantWidth-2 bits) // {1bit, 2bits, 5bits, 8bits}
 
 
-  // * Approximate Multiplier Stage1
+  // 5. Approximate Multiplier Stage1
   val AxMultS1 = new AdderInt(Width=TotalWidth)
   AxMultS1.io.X := Wq_Extend_FP
   AxMultS1.io.Y := io.T_CIN_TC
 
 
-  // * Guarding the result of A * Wq
+  //  6. Guarding the result of A * Wq
   val GuardingAW = new GuardAW(TotalWidth=TotalWidth)
   GuardingAW.io.AW_In := AxMultS1.io.Sum
   GuardingAW.io.Wq_NotZero := SNC_MPWq4.io.Wq_NotZero
   GuardingAW.io.A_Valid := io.A_Vld_CIN
 
 
-  // * Approximated R = Wq * A
+  // Approximated R = Wq * A
   io.R_FP := GuardingAW.io.AW_Out
 
 
-  // * Cascade output
+  // 7. Cascade output
   io.T_COUT_TC := io.T_CIN_TC       // no pipeline
   io.A_Vld_COUT := io.A_Vld_CIN     // no pipeline
   io.Wq_COUT_FP := WqLockReg        // with pipeline
 
-  // MARK: The Shared Partial Sum Adder is part of the PE, it is realized in the Tile level Component in our code.
+  // 8. MARK: The Shared Partial Sum Adder is part of the PE, it is realized in the Tile level Component in our code.
 
 }
 
@@ -97,3 +101,9 @@ object AxCore_SharedAdd_MPWq4_PE_Gen extends App {
     QtTotalWidth=4, ExpoWidth=ExpoWidth, MantWidth=MantWidth
   )).printRtl().mergeRTLSource()
 }
+
+/*
+Questions: 
+1. Why the transimission of T needs no pipeline?
+2. Why the transimission of Wq needs pipeline?
+*/

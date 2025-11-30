@@ -17,14 +17,20 @@ case class AxCore_SharedAdd_MPWq4_Tile(
                                         Integer      : Int,
                                         Fraction     : Int,
                                       ) extends Component {
-
+  // 1. Prameters and bit width.
+  // PERow / PECol: the internal PE array size inside a Tile. (4*4)
+  // QtTotalWidth=4: FP4 for weights
+  // Integer, Fraction: integer and fraction bit width of partial sum. (4, 20)
   val TotalWidth = 1 + ExpoWidth + MantWidth
   val PWidth     = Integer + Fraction
   val PSumWidth  = ExpoWidth + PWidth + 1
 
+  // 2. IO
+  // Row direction: T, A_Valid
+  // Col direction: Wq, Psum
   val io = new Bundle {
     val Wq_CIN_FP  = in  Vec(Bits(QtTotalWidth bits), PECol)           // Wq_FP Cascade In
-    val Wq_COUT_FP = out Vec(Bits(QtTotalWidth bits), PECol)           // Wq_FP Cascade Out
+    val Wq_COUT_FP = out Vec(Bits(QtTotalWidth bits), PECol)           // Wq_FP Cascade Out 
     val Wq_FmtSel  = in  Bits(2 bits)                                  // Wq Format Select. 00,01 for E3M0, 10 for E2M1, 11 for E1M2
 
     val T_CIN_TC   = in  Vec(Bits(TotalWidth bits), PERow)             // T_TC Cascade In
@@ -40,7 +46,8 @@ case class AxCore_SharedAdd_MPWq4_Tile(
   noIoPrefix()
 
 
-  // * Generate PEs
+  // 3. Generate PEs and shared column Adders
+  // generate PERow * PECol PEs
   val PEs = List.tabulate(PERow,PECol)((pr, pc) => { AxCore_SharedAdd_MPWq4_PE(
     QtTotalWidth=QtTotalWidth, ExpoWidth=ExpoWidth, MantWidth=MantWidth
   ).setName(s"PEs_pr${pr}_pc${pc}") })
@@ -52,7 +59,8 @@ case class AxCore_SharedAdd_MPWq4_Tile(
   }
 
 
-  // * Horizontal
+  // 4. Horizontal connections
+  // T, A_valid stream in each row.
   for (pr <- 0 until PERow) {
     for (pc <- 0 until PECol) {
       if (pc == 0) {
@@ -68,7 +76,9 @@ case class AxCore_SharedAdd_MPWq4_Tile(
   }
 
 
-  // * Vertical
+  // 5. Vertical connections
+  // Psum + R_FP
+  // For each column, all the R_FPs are connected to the SharedAdder.
   for (pc <- 0 until PECol) {
     SharedAddGroup(pc).io.PSumIn := io.PSumIn(pc).setName(s"PSumIn_pc${pc}")
     io.PSumOut(pc).setName(s"PSumOut_pc${pc}") := SharedAddGroup(pc).io.PSumOut
@@ -84,7 +94,7 @@ case class AxCore_SharedAdd_MPWq4_Tile(
   }
 
 
-  // * One to all
+  // 6. Broadcast signals: WqLock, Wq_FmtSel.
   PEs.foreach{ pr => pr.foreach{ pc =>
     pc.io.WqLock    := io.WqLock
     pc.io.Wq_FmtSel := io.Wq_FmtSel

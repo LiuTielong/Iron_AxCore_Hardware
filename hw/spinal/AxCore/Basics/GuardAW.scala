@@ -22,5 +22,6 @@ case class GuardAW(TotalWidth: Int) extends Component {
   val Valid = io.Wq_NotZero & io.A_Valid
 
   io.AW_Out := Mux(Valid, io.AW_In, B(0))
+  // io.AW_Out := (Valid ? io.AW_In | B(0))
 
 }
